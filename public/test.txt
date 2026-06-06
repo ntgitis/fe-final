@@ -1,0 +1,146 @@
+--- frontend photoCount và commentsCount---
+
+<Box sx={{ display: "flex", gap: 1, ml: 1 }}>
+{/* Bubble xanh: số ảnh */}
+<Chip
+    label={item.photoCount ?? 0}
+    size="small"
+    sx={{
+    backgroundColor: "green",
+    color: "white",
+    fontWeight: "bold",
+    minWidth: 20,
+    }}
+    onClick={(e) => {
+    e.preventDefault();
+    navigate(`/photos/${item._id}`);
+    }}
+/>
+{/* Bubble đỏ: số comment*/}
+<Chip
+    label={item.commentCount ?? 0}
+    size="small"
+    sx={{
+    backgroundColor: "red",
+    color: "white",
+    fontWeight: "bold",
+    minWidth: 20,
+    }}
+    onClick={(e) => {
+    e.preventDefault();
+    navigate(`/comments/${item._id}`);
+    }}
+/>
+</Box>
+
+-----------------------------------------
+backend photoCount và commentsCount
+router.get("/list", async (req, res) => {
+  try {
+    const users = await User.find({}, "_id first_name last_name");
+
+    const allPhotos = await Photo.find({});
+
+    const userListWithCounts = await Promise.all(
+      users.map(async (user) => {
+        const photoCount = await Photo.countDocuments({ user_id: user._id });
+
+        let commentCount = 0;
+        allPhotos.forEach((photo) => {
+          if (photo.comments) {
+            photo.comments.forEach((comment) => {
+              if (
+                comment.user_id &&
+                comment.user_id.toString() === user._id.toString()
+              ) {
+                commentCount++;
+              }
+            });
+          }
+        });
+
+        return {
+          _id: user._id,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          photoCount: photoCount,
+          commentCount: commentCount,
+        };
+      })
+    );
+
+    res.json(userListWithCounts);
+  } catch (err) {
+    res.status(500).send("Lỗi server khi lấy danh sách user: " + err.message);
+  }
+});
+
+----------------------------------------
+//Lấy danh sách photo của user
+router.get("/photosOfUser/:id", async (request, response) => {
+  const userId = request.params.id;
+
+  try {
+    const photos = await Photo.find({ user_id: userId });
+
+    if (!photos || photos.length === 0) {
+      return response.status(200).json([]);
+    }
+
+    const photosObj = JSON.parse(JSON.stringify(photos));
+
+    await Promise.all(
+      photosObj.map(async (photo) => {
+        if (photo.comments && photo.comments.length > 0) {
+          await Promise.all(
+            photo.comments.map(async (comment) => {
+              const user = await User.findById(
+                comment.user_id,
+                "_id first_name last_name"
+              );
+              comment.user = user;
+              delete comment.user_id;
+            })
+          );
+        }
+      })
+    );
+
+    response.status(200).json(photosObj);
+  } catch (err) {
+    response
+      .status(500)
+      .json({ message: "Lỗi hệ thống khi truy vấn ảnh", error: err.message });
+  }
+});
+
+----------------------------------------
+//Lấy danh sách comment của user
+router.get("/commentsOfUser/:id", async (req, res) => {
+  const userId = req.params.id;
+  try {
+    const allPhotos = await Photo.find({});
+    const userComments = [];
+
+    allPhotos.forEach((photo) => {
+      if (photo.comments) {
+        photo.comments.forEach((comment) => {
+          if (comment.user_id && comment.user_id.toString() === userId) {
+            userComments.push({
+              comment: comment.comment,
+              date_time: comment.date_time,
+              photo_file_name: photo.file_name,
+              photo_id: photo._id,
+            });
+          }
+        });
+      }
+    });
+
+    res.status(200).json(userComments);
+  } catch (err) {
+    res
+      .status(500)
+      .send("Lỗi hệ thống khi lấy danh sách comment: " + err.message);
+  }
+});
